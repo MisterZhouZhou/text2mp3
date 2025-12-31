@@ -2,6 +2,8 @@
 
 基于 Edge TTS 的跨平台文本转语音工具，使用 Tauri + React + DaisyUI 构建。
 
+![应用截图](./screenshot/iShot_2025-12-31_16.46.12.png)
+
 ## 功能特性
 
 - **单次生成**：输入文本一键生成 MP3 文件
