@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
+import { useProxyStore } from "./store/proxyStore";
+import { ProxySettings } from "./components/ProxySettings";
 import "./App.css";
 
 interface Voice {
@@ -26,16 +28,20 @@ function App() {
   const [batchText, setBatchText] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"single" | "batch">("single");
+  const [activeTab, setActiveTab] = useState<"single" | "batch" | "proxy">("single");
   const [locale, setLocale] = useState("zh-CN");
+  const { proxy, loadFromStorage } = useProxyStore();
 
   useEffect(() => {
+    loadFromStorage();
     loadVoices();
   }, []);
 
   async function loadVoices() {
     try {
-      const voiceList = await invoke<Voice[]>("fetch_voices");
+      const voiceList = await invoke<Voice[]>("fetch_voices", {
+        proxy: proxy.enabled ? proxy : null
+      });
       setVoices(voiceList);
     } catch (error) {
       setMessage(`加载音色失败: ${error}`);
@@ -70,6 +76,7 @@ function App() {
         volume: `${volume >= 0 ? "+" : ""}${volume}%`,
         pitch: `${pitch >= 0 ? "+" : ""}${pitch}Hz`,
         outputPath: filePath,
+        proxy: proxy.enabled ? proxy : null,
       });
 
       setMessage(`生成成功: ${filePath}`);
@@ -114,6 +121,7 @@ function App() {
         volume: `${volume >= 0 ? "+" : ""}${volume}%`,
         pitch: `${pitch >= 0 ? "+" : ""}${pitch}Hz`,
         outputDir: directory,
+        proxy: proxy.enabled ? proxy : null,
       });
 
       setMessage(`批量生成成功，共 ${results.length} 个文件`);
@@ -145,7 +153,22 @@ function App() {
           >
             批量生成
           </a>
+          <a
+            className={`tab ${activeTab === "proxy" ? "tab-active" : ""}`}
+            onClick={() => setActiveTab("proxy")}
+          >
+            代理设置
+          </a>
         </div>
+
+        {/* 代理状态指示器 */}
+        {proxy.enabled && activeTab !== "proxy" && (
+          <div className="alert alert-info mb-4">
+            <span>
+              代理已启用: {proxy.proxy_type}://{proxy.host}:{proxy.port}
+            </span>
+          </div>
+        )}
 
         {/* 配置区域 */}
         <div className="card bg-base-100 shadow-xl mb-4">
@@ -316,6 +339,9 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* 代理设置 */}
+        {activeTab === "proxy" && <ProxySettings />}
 
         {/* 消息提示 */}
         {message && (

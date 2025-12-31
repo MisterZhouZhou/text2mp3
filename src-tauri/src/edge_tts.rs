@@ -1,14 +1,51 @@
 use futures_util::{SinkExt, StreamExt};
 use reqwest;
 use serde::{Deserialize, Serialize};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message, client_async_tls, MaybeTlsStream};
 use uuid::Uuid;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio::net::TcpStream;
+use tokio_socks::tcp::Socks5Stream;
 
 // 常量定义（来自 Python 源码）
 const BASE_URL: &str = "speech.platform.bing.com/consumer/speech/synthesize/readaloud";
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const CHROMIUM_MAJOR_VERSION: &str = "130";
+
+// 代理类型枚举
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ProxyType {
+    Http,
+    Https,
+    Socks5,
+}
+
+// 代理配置结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    pub enabled: bool,
+    pub proxy_type: ProxyType,
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+impl ProxyConfig {
+    pub fn to_url(&self) -> String {
+        let protocol = match self.proxy_type {
+            ProxyType::Http => "http",
+            ProxyType::Https => "https",
+            ProxyType::Socks5 => "socks5",
+        };
+
+        if let (Some(username), Some(password)) = (&self.username, &self.password) {
+            format!("{}://{}:{}@{}:{}", protocol, username, password, self.host, self.port)
+        } else {
+            format!("{}://{}:{}", protocol, self.host, self.port)
+        }
+    }
+}
 
 // 音色信息结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,13 +87,28 @@ impl Default for TTSConfig {
 }
 
 // 获取可用音色列表
-pub async fn get_voices() -> Result<Vec<Voice>, String> {
+pub async fn get_voices(proxy: Option<ProxyConfig>) -> Result<Vec<Voice>, String> {
     let url = format!(
         "https://{}/voices/list?trustedclienttoken={}",
         BASE_URL, TRUSTED_CLIENT_TOKEN
     );
 
-    let client = reqwest::Client::new();
+    // 构建客户端，支持代理
+    let mut client_builder = reqwest::Client::builder();
+
+    if let Some(proxy_config) = proxy {
+        if proxy_config.enabled {
+            let proxy = reqwest::Proxy::all(&proxy_config.to_url())
+                .map_err(|e| format!("代理配置错误: {}", e))?;
+            client_builder = client_builder.proxy(proxy);
+        }
+    }
+
+    let client = client_builder
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
     let response = client
         .get(&url)
         .header("User-Agent", format!(
@@ -91,8 +143,36 @@ fn create_ssml(text: &str, config: &TTSConfig) -> String {
     )
 }
 
+// SOCKS5 代理连接辅助函数
+async fn connect_via_socks5(
+    request: http::Request<()>,
+    proxy_config: &ProxyConfig,
+) -> Result<tokio_tungstenite::WebSocketStream<MaybeTlsStream<TcpStream>>, String> {
+    let proxy_addr = format!("{}:{}", proxy_config.host, proxy_config.port);
+    let uri = request.uri();
+    let host = uri.host().ok_or("无效的主机名")?;
+    let port = uri.port_u16().unwrap_or(443);
+
+    let stream = if let (Some(username), Some(password)) = (&proxy_config.username, &proxy_config.password) {
+        Socks5Stream::connect_with_password(proxy_addr.as_str(), (host, port), username.as_str(), password.as_str())
+            .await
+            .map_err(|e| format!("SOCKS5代理连接失败: {}", e))?
+    } else {
+        Socks5Stream::connect(proxy_addr.as_str(), (host, port))
+            .await
+            .map_err(|e| format!("SOCKS5代理连接失败: {}", e))?
+    };
+
+    let ws_stream = client_async_tls(request, stream.into_inner())
+        .await
+        .map_err(|e| format!("WebSocket握手失败: {}", e))?
+        .0;
+
+    Ok(ws_stream)
+}
+
 // 文本转语音
-pub async fn text_to_speech(text: &str, config: &TTSConfig) -> Result<Vec<u8>, String> {
+pub async fn text_to_speech(text: &str, config: &TTSConfig, proxy: Option<ProxyConfig>) -> Result<Vec<u8>, String> {
     let wss_url = format!(
         "wss://{}/edge/v1?TrustedClientToken={}",
         BASE_URL, TRUSTED_CLIENT_TOKEN
@@ -115,10 +195,22 @@ pub async fn text_to_speech(text: &str, config: &TTSConfig) -> Result<Vec<u8>, S
     headers.insert("Cache-Control", "no-cache".parse().unwrap());
     headers.insert("Origin", "chrome-extension://jdiccldimpdaibmckianbfold".parse().unwrap());
 
-    // 连接 WebSocket
-    let (ws_stream, _) = connect_async(request)
-        .await
-        .map_err(|e| format!("WebSocket 连接失败: {}", e))?;
+    // 根据代理配置建立连接
+    let ws_stream = if let Some(proxy_config) = proxy {
+        if proxy_config.enabled && proxy_config.proxy_type == ProxyType::Socks5 {
+            connect_via_socks5(request, &proxy_config).await?
+        } else if proxy_config.enabled {
+            return Err("WebSocket暂不支持HTTP代理，请使用SOCKS5代理".to_string());
+        } else {
+            connect_async(request).await
+                .map_err(|e| format!("WebSocket 连接失败: {}", e))?
+                .0
+        }
+    } else {
+        connect_async(request).await
+            .map_err(|e| format!("WebSocket 连接失败: {}", e))?
+            .0
+    };
 
     let (mut write, mut read) = ws_stream.split();
 

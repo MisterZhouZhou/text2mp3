@@ -1,12 +1,12 @@
 mod edge_tts;
 
-use edge_tts::{get_voices, text_to_speech, TTSConfig, Voice};
+use edge_tts::{get_voices, text_to_speech, TTSConfig, Voice, ProxyConfig};
 use std::fs;
 use std::path::PathBuf;
 
 #[tauri::command]
-async fn fetch_voices() -> Result<Vec<Voice>, String> {
-    get_voices().await
+async fn fetch_voices(proxy: Option<ProxyConfig>) -> Result<Vec<Voice>, String> {
+    get_voices(proxy).await
 }
 
 #[tauri::command]
@@ -17,6 +17,7 @@ async fn generate_speech(
     volume: String,
     pitch: String,
     output_path: String,
+    proxy: Option<ProxyConfig>,
 ) -> Result<String, String> {
     let config = TTSConfig {
         voice,
@@ -25,7 +26,7 @@ async fn generate_speech(
         pitch,
     };
 
-    let audio_data = text_to_speech(&text, &config).await?;
+    let audio_data = text_to_speech(&text, &config, proxy).await?;
 
     // 保存到文件
     fs::write(&output_path, audio_data)
@@ -42,6 +43,7 @@ async fn batch_generate_speech(
     volume: String,
     pitch: String,
     output_dir: String,
+    proxy: Option<ProxyConfig>,
 ) -> Result<Vec<String>, String> {
     let config = TTSConfig {
         voice,
@@ -69,7 +71,7 @@ async fn batch_generate_speech(
             .ok_or("路径转换失败")?
             .to_string();
 
-        let audio_data = text_to_speech(&text, &config).await?;
+        let audio_data = text_to_speech(&text, &config, proxy.clone()).await?;
 
         fs::write(&output_path, audio_data)
             .map_err(|e| format!("保存文件失败: {}", e))?;
@@ -80,6 +82,12 @@ async fn batch_generate_speech(
     Ok(results)
 }
 
+#[tauri::command]
+async fn test_proxy(proxy: ProxyConfig) -> Result<String, String> {
+    get_voices(Some(proxy)).await?;
+    Ok("代理连接测试成功".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -88,7 +96,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_voices,
             generate_speech,
-            batch_generate_speech
+            batch_generate_speech,
+            test_proxy
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
