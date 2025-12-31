@@ -99,3 +99,7 @@ a {
 .dark::view-transition-new(root) {
   z-index: 1;
 }
+
+.test-primary {
+  @apply bg-primary text-white p-4 font-bold;
+}
