@@ -322,7 +322,7 @@
 
 "@jridgewell/remapping@^2.3.4", "@jridgewell/remapping@^2.3.5":
   version "2.3.5"
-  resolved "https://registry.npmmirror.com/@jridgewell/remapping/-/remapping-2.3.5.tgz"
+  resolved "https://registry.npmmirror.com/@jridgewell/remapping/-/remapping-2.3.5.tgz#375c476d1972947851ba1e15ae8f123047445aa1"
   integrity sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==
   dependencies:
     "@jridgewell/gen-mapping" "^0.3.5"
@@ -1157,7 +1157,7 @@ tapable@^2.2.0:
 
 tinyglobby@^0.2.15:
   version "0.2.15"
-  resolved "https://registry.npmmirror.com/tinyglobby/-/tinyglobby-0.2.15.tgz"
+  resolved "https://registry.npmmirror.com/tinyglobby/-/tinyglobby-0.2.15.tgz#e228dd1e638cea993d2fdb4fcd2d4602a79951c2"
   integrity sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==
   dependencies:
     fdir "^6.5.0"
