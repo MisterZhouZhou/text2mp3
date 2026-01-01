@@ -4,9 +4,9 @@
   "version": "0.1.2",
   "identifier": "com.xiaoxi.text2mp3",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "yarn build",
     "frontendDist": "../dist"
   },
   "app": {
